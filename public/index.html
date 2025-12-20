@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Chat App</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <!-- Username prompt modal - shown before entering chat -->
+    <div id="usernameModal" class="modal">
+        <div class="modal-content">
+            <h2>Enter Your Username</h2>
+            <p>Choose a display name for this chat session:</p>
+            <input type="text" id="usernameInput" placeholder="Your username" maxlength="50" autofocus>
+            <button id="usernameSubmit">Join Chat</button>
+        </div>
+    </div>
+
+    <!-- Main chat interface - hidden until username is entered -->
+    <div id="chatContainer" class="chat-container hidden">
+        <!-- Header showing room ID -->
+        <div class="chat-header">
+            <h1>Chat Room: <span id="roomDisplay"></span></h1>
+            <p class="user-info">You are: <span id="currentUsername"></span></p>
+        </div>
+
+        <!-- Messages display area -->
+        <div id="messagesContainer" class="messages-container">
+            <!-- Messages will be dynamically inserted here -->
+        </div>
+
+        <!-- Message input area -->
+        <div class="input-container">
+            <input type="text" id="messageInput" placeholder="Type your message..." maxlength="500">
+            <button id="sendButton">Send</button>
+        </div>
+
+        <!-- Connection status indicator -->
+        <div id="connectionStatus" class="status-indicator">
+            <span class="status-dot"></span>
+            <span id="statusText">Connecting...</span>
+        </div>
+    </div>
+
+    <!-- Load the client-side WebSocket logic -->
+    <script src="/client.js"></script>
+</body>
+</html>
+
