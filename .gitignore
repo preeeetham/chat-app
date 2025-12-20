@@ -21,3 +21,6 @@ Thumbs.db
 *.tmp
 websocket-chat-app@1.0.0
 
+# Documentation
+REQUIREMENTS.md
+
