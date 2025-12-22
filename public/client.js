@@ -1,6 +1,7 @@
 // Global variables to track WebSocket connection and user state
 let socket = null;
 let currentUsername = null;
+let currentUserId = null; // Phase 1: User identity - received from server
 let roomId = null;
 
 // Extract roomId from the current URL path
@@ -30,6 +31,15 @@ if (document.readyState === 'loading') {
 }
 
 function initializeChat() {
+    // Phase 1: Try to restore userId from localStorage (if user refreshed page)
+    const storedUserId = localStorage.getItem('chatUserId');
+    const storedUsername = localStorage.getItem('chatUsername');
+    if (storedUserId && storedUsername) {
+        currentUserId = storedUserId;
+        console.log(`Restored userId from localStorage: ${currentUserId}`);
+        // Note: Username will be sent again when WebSocket connects
+    }
+    
     // Get references to DOM elements we'll need to manipulate
     const usernameModal = document.getElementById('usernameModal');
     const chatContainer = document.getElementById('chatContainer');
@@ -156,6 +166,16 @@ function connectWebSocket() {
             // Parse the JSON message from the server
             const message = JSON.parse(event.data);
             console.log('Message received:', message);
+            
+            // Phase 1: Handle userId assignment (one-time message from server)
+            if (message.type === 'userId-assigned') {
+                currentUserId = message.userId;
+                console.log(`Assigned userId: ${currentUserId}, username: ${message.username}`);
+                // Store userId in localStorage for persistence across page refreshes
+                localStorage.setItem('chatUserId', currentUserId);
+                localStorage.setItem('chatUsername', message.username);
+                return; // Don't display this as a chat message
+            }
             
             // Display the message in the chat interface
             displayMessage(message);
