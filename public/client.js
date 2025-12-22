@@ -1,110 +1,178 @@
-// Global variables to track WebSocket connection and user state
+// Global variables
 let socket = null;
 let currentUsername = null;
-let currentUserId = null; // Phase 1: User identity - received from server
+let currentUserId = null;
 let roomId = null;
+let activeChatType = 'room'; // 'room' or 'dm'
+let activeDmUserId = null; // userId of the active DM conversation
+let contacts = new Map(); // userId -> { userId, username, online, inRoom }
+let dmConversations = new Map(); // userId -> array of messages
 
-// Extract roomId from the current URL path
-// Expected URL format: http://localhost:3000/chat/room-abc-123
-// We split by '/' and get the last segment after 'chat'
+// Extract roomId from URL
 function extractRoomIdFromUrl() {
     const pathParts = window.location.pathname.split('/');
     const chatIndex = pathParts.indexOf('chat');
-    
     if (chatIndex !== -1 && pathParts.length > chatIndex + 1) {
         return pathParts[chatIndex + 1];
     }
-    
-    // Fallback: if URL doesn't match expected pattern, use 'default-room'
     console.warn('Could not extract roomId from URL, using default-room');
     return 'default-room';
 }
 
-// Initialize chat when DOM is ready
-// Since the script is at the end of body, DOM is usually ready, but we check to be safe
+// Initialize when DOM is ready
 if (document.readyState === 'loading') {
-    // DOM hasn't finished loading yet, wait for it
     document.addEventListener('DOMContentLoaded', initializeChat);
 } else {
-    // DOM is already loaded, initialize immediately
     initializeChat();
 }
 
 function initializeChat() {
-    // Phase 1: Try to restore userId from localStorage (if user refreshed page)
+    // Restore userId from localStorage
     const storedUserId = localStorage.getItem('chatUserId');
     const storedUsername = localStorage.getItem('chatUsername');
     if (storedUserId && storedUsername) {
         currentUserId = storedUserId;
         console.log(`Restored userId from localStorage: ${currentUserId}`);
-        // Note: Username will be sent again when WebSocket connects
     }
     
-    // Get references to DOM elements we'll need to manipulate
-    const usernameModal = document.getElementById('usernameModal');
-    const chatContainer = document.getElementById('chatContainer');
-    const usernameInput = document.getElementById('usernameInput');
-    const usernameSubmit = document.getElementById('usernameSubmit');
-    const messageInput = document.getElementById('messageInput');
-    const sendButton = document.getElementById('sendButton');
-    const messagesContainer = document.getElementById('messagesContainer');
-    const roomDisplay = document.getElementById('roomDisplay');
-    const currentUsernameDisplay = document.getElementById('currentUsername');
-    const connectionStatus = document.getElementById('connectionStatus');
-    const statusText = document.getElementById('statusText');
-    const statusDot = document.querySelector('.status-dot');
-
-    // Verify all required elements exist
-    if (!usernameModal || !chatContainer || !usernameInput || !usernameSubmit || 
-        !messageInput || !sendButton || !messagesContainer || !roomDisplay || 
-        !currentUsernameDisplay || !statusText || !statusDot) {
+    // Get DOM elements
+    const elements = {
+        // Modal
+        usernameModal: document.getElementById('usernameModal'),
+        usernameInput: document.getElementById('usernameInput'),
+        usernameSubmit: document.getElementById('usernameSubmit'),
+        
+        // Main container
+        chatContainer: document.getElementById('chatContainer'),
+        roomDisplay: document.getElementById('roomDisplay'),
+        currentUsername: document.getElementById('currentUsername'),
+        userIdBadge: document.getElementById('userIdBadge'),
+        userStatusIndicator: document.getElementById('userStatusIndicator'),
+        connectionStatus: document.getElementById('connectionStatus'),
+        statusText: document.getElementById('statusText'),
+        statusDot: document.getElementById('statusDot'),
+        
+        // Sidebar
+        sidebarTabs: document.querySelectorAll('.tab-btn'),
+        contactsTab: document.getElementById('contactsTab'),
+        onlineTab: document.getElementById('onlineTab'),
+        roomTab: document.getElementById('roomTab'),
+        contactsList: document.getElementById('contactsList'),
+        onlineContactsList: document.getElementById('onlineContactsList'),
+        roomContactsList: document.getElementById('roomContactsList'),
+        addContactBtn: document.getElementById('addContactBtn'),
+        refreshOnlineBtn: document.getElementById('refreshOnlineBtn'),
+        refreshRoomBtn: document.getElementById('refreshRoomBtn'),
+        contactSearch: document.getElementById('contactSearch'),
+        clearSearchBtn: document.getElementById('clearSearchBtn'),
+        
+        // Chat area
+        chatTabs: document.querySelectorAll('.chat-tab-btn'),
+        roomChatView: document.getElementById('roomChatView'),
+        dmChatView: document.getElementById('dmChatView'),
+        messagesContainer: document.getElementById('messagesContainer'),
+        dmMessagesContainer: document.getElementById('dmMessagesContainer'),
+        messageInput: document.getElementById('messageInput'),
+        dmMessageInput: document.getElementById('dmMessageInput'),
+        sendButton: document.getElementById('sendButton'),
+        dmSendButton: document.getElementById('dmSendButton'),
+        
+        // DM
+        dmConversationsList: document.getElementById('dmConversationsList'),
+        dmChatActive: document.getElementById('dmChatActive'),
+        dmUserName: document.getElementById('dmUserName'),
+        dmUserStatus: document.getElementById('dmUserStatus'),
+        closeDmBtn: document.getElementById('closeDmBtn'),
+        
+        // Add contact modal
+        addContactModal: document.getElementById('addContactModal'),
+        addContactInput: document.getElementById('addContactInput'),
+        confirmAddContact: document.getElementById('confirmAddContact'),
+        cancelAddContact: document.getElementById('cancelAddContact'),
+        closeAddContactModal: document.getElementById('closeAddContactModal'),
+    };
+    
+    // Verify required elements
+    const requiredElements = Object.values(elements).filter(el => el === null);
+    if (requiredElements.length > 0) {
         console.error('Error: Some required DOM elements are missing!');
         alert('Error: Page did not load correctly. Please refresh the page.');
         return;
     }
-
-    // Initialize: Extract roomId and set up event listeners
-    roomId = extractRoomIdFromUrl();
-    roomDisplay.textContent = roomId;
-
-    // Handle username submission
-    usernameSubmit.addEventListener('click', handleUsernameSubmit);
-    usernameInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            handleUsernameSubmit();
-        }
-    });
-
-    // Store references globally for use in other functions
-    window.chatElements = {
-        usernameModal,
-        chatContainer,
-        usernameInput,
-        usernameSubmit,
-        messageInput,
-        sendButton,
-        messagesContainer,
-        roomDisplay,
-        currentUsernameDisplay,
-        connectionStatus,
-        statusText,
-        statusDot
-    };
     
-    // Set up message sending event listeners
-    setupMessageSending();
+    // Initialize room
+    roomId = extractRoomIdFromUrl();
+    elements.roomDisplay.textContent = roomId;
+    
+    // Store elements globally
+    window.chatElements = elements;
+    
+    // Set up event listeners
+    setupEventListeners();
+}
+
+function setupEventListeners() {
+    const e = window.chatElements;
+    
+    // Username modal
+    e.usernameSubmit.addEventListener('click', handleUsernameSubmit);
+    e.usernameInput.addEventListener('keypress', (ev) => {
+        if (ev.key === 'Enter') handleUsernameSubmit();
+    });
+    
+    // Sidebar tabs
+    e.sidebarTabs.forEach(btn => {
+        btn.addEventListener('click', () => switchSidebarTab(btn.dataset.tab));
+    });
+    
+    // Chat type tabs
+    e.chatTabs.forEach(btn => {
+        btn.addEventListener('click', () => switchChatType(btn.dataset.chatType));
+    });
+    
+    // Contact management
+    e.addContactBtn.addEventListener('click', () => showAddContactModal());
+    e.confirmAddContact.addEventListener('click', handleAddContact);
+    e.cancelAddContact.addEventListener('click', hideAddContactModal);
+    e.closeAddContactModal.addEventListener('click', hideAddContactModal);
+    e.addContactInput.addEventListener('keypress', (ev) => {
+        if (ev.key === 'Enter') handleAddContact();
+    });
+    
+    // Refresh buttons
+    e.refreshOnlineBtn.addEventListener('click', refreshOnlineContacts);
+    e.refreshRoomBtn.addEventListener('click', refreshContactsInRoom);
+    
+    // Contact search
+    e.contactSearch.addEventListener('input', () => {
+        filterContacts();
+        updateClearButton();
+    });
+    e.clearSearchBtn.addEventListener('click', clearSearch);
+    
+    // Message sending
+    e.sendButton.addEventListener('click', sendRoomMessage);
+    e.messageInput.addEventListener('keypress', (ev) => {
+        if (ev.key === 'Enter') sendRoomMessage();
+    });
+    
+    // DM message sending
+    e.dmSendButton.addEventListener('click', sendDirectMessage);
+    e.dmMessageInput.addEventListener('keypress', (ev) => {
+        if (ev.key === 'Enter') sendDirectMessage();
+    });
+    
+    // Close DM
+    e.closeDmBtn.addEventListener('click', closeDmConversation);
+    
+    // Load contacts on connection
+    // This will be called after WebSocket connects
 }
 
 function handleUsernameSubmit() {
-    const elements = window.chatElements;
-    if (!elements) {
-        console.error('Chat elements not initialized');
-        return;
-    }
+    const e = window.chatElements;
+    const username = e.usernameInput.value.trim();
     
-    const username = elements.usernameInput.value.trim();
-    
-    // Validate username
     if (!username) {
         alert('Please enter a username');
         return;
@@ -115,130 +183,166 @@ function handleUsernameSubmit() {
         return;
     }
     
-    // Store username and set up WebSocket connection
     currentUsername = username;
-    elements.currentUsernameDisplay.textContent = currentUsername;
+    e.currentUsername.textContent = currentUsername;
     
-    // Hide modal and show chat interface
-    elements.usernameModal.classList.add('hidden');
-    elements.chatContainer.classList.remove('hidden');
+    e.usernameModal.classList.add('hidden');
+    e.chatContainer.classList.remove('hidden');
     
-    // Establish WebSocket connection
     connectWebSocket();
 }
 
-// Establish WebSocket connection to the server
-// The WebSocket URL uses ws:// (or wss:// for secure connections)
-// We construct the path based on the roomId extracted from the URL
 function connectWebSocket() {
-    // Determine the protocol (ws or wss) based on current page protocol
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/chat/${roomId}`;
     
     console.log(`Connecting to WebSocket: ${wsUrl}`);
     updateConnectionStatus('Connecting...', 'connecting');
     
-    // Create new WebSocket connection
     socket = new WebSocket(wsUrl);
     
-    // Event handler: Connection opened successfully
-    socket.onopen = function(event) {
+    socket.onopen = function() {
         console.log('WebSocket connection opened');
         updateConnectionStatus('Connected', 'connected');
         
-        // Send username to server as the first message
-        // This tells the server which username is associated with this socket
         const usernameMessage = {
             type: 'setUsername',
             username: currentUsername
         };
         socket.send(JSON.stringify(usernameMessage));
         
-        // Focus the message input so user can start typing immediately
-        if (window.chatElements && window.chatElements.messageInput) {
-            window.chatElements.messageInput.focus();
-        }
+        window.chatElements.messageInput.focus();
     };
     
-    // Event handler: Message received from server
     socket.onmessage = function(event) {
         try {
-            // Parse the JSON message from the server
             const message = JSON.parse(event.data);
             console.log('Message received:', message);
-            
-            // Phase 1: Handle userId assignment (one-time message from server)
-            if (message.type === 'userId-assigned') {
-                currentUserId = message.userId;
-                console.log(`Assigned userId: ${currentUserId}, username: ${message.username}`);
-                // Store userId in localStorage for persistence across page refreshes
-                localStorage.setItem('chatUserId', currentUserId);
-                localStorage.setItem('chatUsername', message.username);
-                return; // Don't display this as a chat message
-            }
-            
-            // Display the message in the chat interface
-            displayMessage(message);
+            handleServerMessage(message);
         } catch (error) {
             console.error('Error parsing message:', error);
         }
     };
     
-    // Event handler: Connection closed
-    socket.onclose = function(event) {
+    socket.onclose = function() {
         console.log('WebSocket connection closed');
         updateConnectionStatus('Disconnected', 'disconnected');
-        
-        // Optionally attempt to reconnect after a delay
-        // For simplicity, we'll just show the disconnected state
-        // In a production app, you might implement reconnection logic here
     };
     
-    // Event handler: Connection error
     socket.onerror = function(error) {
         console.error('WebSocket error:', error);
         updateConnectionStatus('Connection Error', 'disconnected');
     };
 }
 
-// Update the connection status indicator at the bottom of the chat
-function updateConnectionStatus(text, status) {
-    const elements = window.chatElements;
-    if (!elements) return;
+function handleServerMessage(message) {
+    const e = window.chatElements;
     
-    elements.statusText.textContent = text;
-    
-    // Update the status dot color based on connection state
-    elements.statusDot.className = 'status-dot';
-    if (status === 'connected') {
-        elements.statusDot.classList.add('connected');
-    } else if (status === 'disconnected') {
-        elements.statusDot.classList.add('disconnected');
-    }
-}
-
-// Display a message in the chat interface
-function displayMessage(message) {
-    const elements = window.chatElements;
-    if (!elements || !elements.messagesContainer) {
-        console.error('Cannot display message: messages container not found');
+    // Handle different message types
+    if (message.type === 'userId-assigned') {
+        currentUserId = message.userId;
+        localStorage.setItem('chatUserId', currentUserId);
+        localStorage.setItem('chatUsername', message.username);
+        e.userIdBadge.textContent = `ID: ${currentUserId}`;
+        e.userStatusIndicator.classList.add('online');
+        
+        // Load contacts after getting userId
+        loadContacts();
+        refreshOnlineContacts();
+        refreshContactsInRoom();
         return;
     }
     
-    // Create a new message element
+    if (message.type === 'contacts-list') {
+        updateContactsList(message.contacts);
+        return;
+    }
+    
+    if (message.type === 'online-contacts-list') {
+        updateOnlineContactsList(message.contacts);
+        return;
+    }
+    
+    if (message.type === 'contacts-in-room-list') {
+        updateRoomContactsList(message.contacts);
+        return;
+    }
+    
+    if (message.type === 'contact-added') {
+        showNotification(`Contact added: ${message.username}`);
+        loadContacts();
+        return;
+    }
+    
+    if (message.type === 'contact-removed') {
+        showNotification(`Contact removed: ${message.username}`);
+        loadContacts();
+        return;
+    }
+    
+    if (message.type === 'contact-error') {
+        alert(`Error: ${message.message}`);
+        return;
+    }
+    
+    if (message.type === 'direct-message') {
+        handleDirectMessage(message);
+        return;
+    }
+    
+    if (message.type === 'dm-error') {
+        alert(`DM Error: ${message.message}`);
+        return;
+    }
+    
+    if (message.type === 'dm-history') {
+        handleDmHistory(message);
+        return;
+    }
+    
+    if (message.type === 'presence-update') {
+        handlePresenceUpdate(message);
+        return;
+    }
+    
+    // Regular chat message (room or DM)
+    if (message.username && message.text) {
+        displayMessage(message, activeChatType === 'dm' && activeDmUserId);
+    }
+}
+
+function updateConnectionStatus(text, status) {
+    const e = window.chatElements;
+    if (!e) return;
+    
+    e.statusText.textContent = text;
+    e.statusDot.className = 'status-dot';
+    if (status === 'connected') {
+        e.statusDot.classList.add('connected');
+    } else if (status === 'disconnected') {
+        e.statusDot.classList.add('disconnected');
+    }
+}
+
+function displayMessage(message, isDm = false) {
+    const e = window.chatElements;
+    const container = isDm ? e.dmMessagesContainer : e.messagesContainer;
+    
+    if (!container) return;
+    
     const messageDiv = document.createElement('div');
     messageDiv.className = 'message';
     
-    // Determine message type for styling
-    // System messages (join/leave notifications) are styled differently
     if (message.username === 'System') {
         messageDiv.classList.add('system-message');
     } else if (message.username === currentUsername) {
-        // Messages from the current user appear on the right
         messageDiv.classList.add('own-message');
     }
     
-    // Build the message HTML structure
+    if (isDm) {
+        messageDiv.classList.add('dm-message');
+    }
+    
     const header = document.createElement('div');
     header.className = 'message-header';
     header.textContent = message.username;
@@ -249,66 +353,396 @@ function displayMessage(message) {
     
     const timestamp = document.createElement('div');
     timestamp.className = 'message-timestamp';
-    // Format timestamp for display (extract time portion from ISO string)
-    const time = new Date(message.timestamp).toLocaleTimeString();
-    timestamp.textContent = time;
+    timestamp.textContent = new Date(message.timestamp).toLocaleTimeString();
     
-    // Assemble the message element
     messageDiv.appendChild(header);
     messageDiv.appendChild(text);
     messageDiv.appendChild(timestamp);
     
-    // Add to messages container
-    elements.messagesContainer.appendChild(messageDiv);
+    container.appendChild(messageDiv);
+    container.scrollTop = container.scrollHeight;
     
-    // Auto-scroll to bottom to show the latest message
-    elements.messagesContainer.scrollTop = elements.messagesContainer.scrollHeight;
+    // Store DM messages
+    if (isDm && activeDmUserId) {
+        if (!dmConversations.has(activeDmUserId)) {
+            dmConversations.set(activeDmUserId, []);
+        }
+        dmConversations.get(activeDmUserId).push(message);
+    }
 }
 
-// Set up message sending event listeners (called after DOM is ready)
-function setupMessageSending() {
-    const elements = window.chatElements;
-    if (!elements) return;
+// Sidebar Tab Switching
+function switchSidebarTab(tabName) {
+    const e = window.chatElements;
+    e.sidebarTabs.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === tabName);
+    });
     
-    elements.sendButton.addEventListener('click', sendMessage);
-    elements.messageInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            sendMessage();
+    e.contactsTab.classList.toggle('active', tabName === 'contacts');
+    e.onlineTab.classList.toggle('active', tabName === 'online');
+    e.roomTab.classList.toggle('active', tabName === 'room');
+    
+    if (tabName === 'online') {
+        refreshOnlineContacts();
+    } else if (tabName === 'room') {
+        refreshContactsInRoom();
+    }
+}
+
+// Chat Type Switching (Room vs DM)
+function switchChatType(type) {
+    const e = window.chatElements;
+    activeChatType = type;
+    
+    e.chatTabs.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.chatType === type);
+    });
+    
+    e.roomChatView.classList.toggle('active', type === 'room');
+    e.dmChatView.classList.toggle('active', type === 'dm');
+    
+    if (type === 'room') {
+        e.messageInput.focus();
+    } else {
+        if (!activeDmUserId) {
+            e.dmChatActive.style.display = 'none';
+        } else {
+            e.messageInput.focus();
         }
+    }
+}
+
+// Contact Management
+function loadContacts() {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    
+    socket.send(JSON.stringify({ type: 'get-contacts' }));
+}
+
+function updateContactsList(contactsArray) {
+    const e = window.chatElements;
+    e.contactsList.innerHTML = '';
+    
+    if (contactsArray.length === 0) {
+        e.contactsList.innerHTML = '<div class="empty-state">No contacts yet. Add someone to get started!</div>';
+        return;
+    }
+    
+    contactsArray.forEach(contact => {
+        contacts.set(contact.userId, contact);
+        const item = createContactItem(contact, true);
+        e.contactsList.appendChild(item);
     });
 }
 
-function sendMessage() {
-    const elements = window.chatElements;
-    if (!elements) {
-        console.error('Chat elements not initialized');
+function updateOnlineContactsList(contactsArray) {
+    const e = window.chatElements;
+    e.onlineContactsList.innerHTML = '';
+    
+    if (contactsArray.length === 0) {
+        e.onlineContactsList.innerHTML = '<div class="empty-state">No online contacts</div>';
         return;
     }
     
-    const messageText = elements.messageInput.value.trim();
-    
-    // Don't send empty messages
-    if (!messageText) {
-        return;
-    }
-    
-    // Check if WebSocket is open (readyState 1 = OPEN)
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
-        alert('Not connected to server. Please refresh the page.');
-        return;
-    }
-    
-    // Create message object to send to server
-    // The server will add username and timestamp, so we only send the text
-    const message = {
-        text: messageText
-    };
-    
-    // Send message as JSON string
-    socket.send(JSON.stringify(message));
-    
-    // Clear the input field
-    elements.messageInput.value = '';
-    elements.messageInput.focus();
+    contactsArray.forEach(contact => {
+        const item = createContactItem(contact, false);
+        item.addEventListener('click', () => startDmConversation(contact.userId));
+        e.onlineContactsList.appendChild(item);
+    });
 }
 
+function updateRoomContactsList(contactsArray) {
+    const e = window.chatElements;
+    e.roomContactsList.innerHTML = '';
+    
+    if (contactsArray.length === 0) {
+        e.roomContactsList.innerHTML = '<div class="empty-state">No contacts in this room</div>';
+        return;
+    }
+    
+    contactsArray.forEach(contact => {
+        const item = createContactItem(contact, false);
+        item.addEventListener('click', () => startDmConversation(contact.userId));
+        e.roomContactsList.appendChild(item);
+    });
+}
+
+function createContactItem(contact, showActions = false) {
+    const item = document.createElement('div');
+    item.className = 'contact-item';
+    item.dataset.userId = contact.userId;
+    
+    const info = document.createElement('div');
+    info.className = 'contact-item-info';
+    
+    const status = document.createElement('div');
+    status.className = 'status-indicator';
+    if (contact.online) {
+        status.classList.add('online');
+        if (contact.roomId) {
+            status.classList.add('in-room');
+        }
+    } else {
+        status.classList.add('offline');
+    }
+    
+    const name = document.createElement('span');
+    name.className = 'contact-name';
+    name.textContent = contact.username;
+    
+    info.appendChild(status);
+    info.appendChild(name);
+    
+    item.appendChild(info);
+    
+    if (showActions) {
+        const actions = document.createElement('div');
+        actions.className = 'contact-actions';
+        
+        const dmBtn = document.createElement('button');
+        dmBtn.className = 'icon-btn';
+        dmBtn.title = 'Send DM';
+        dmBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>';
+        dmBtn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            startDmConversation(contact.userId);
+        });
+        
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'icon-btn';
+        removeBtn.title = 'Remove Contact';
+        removeBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
+        removeBtn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            removeContact(contact.userId);
+        });
+        
+        actions.appendChild(dmBtn);
+        actions.appendChild(removeBtn);
+        item.appendChild(actions);
+    }
+    
+    if (contact.roomId) {
+        const badge = document.createElement('span');
+        badge.className = 'contact-badge';
+        badge.textContent = 'In Room';
+        info.appendChild(badge);
+    }
+    
+    return item;
+}
+
+function filterContacts() {
+    const e = window.chatElements;
+    const searchTerm = e.contactSearch.value.toLowerCase();
+    const items = e.contactsList.querySelectorAll('.contact-item');
+    
+    items.forEach(item => {
+        const name = item.querySelector('.contact-name').textContent.toLowerCase();
+        item.style.display = name.includes(searchTerm) ? '' : 'none';
+    });
+}
+
+function updateClearButton() {
+    const e = window.chatElements;
+    if (e.clearSearchBtn) {
+        e.clearSearchBtn.style.display = e.contactSearch.value.trim() ? 'flex' : 'none';
+    }
+}
+
+function clearSearch() {
+    const e = window.chatElements;
+    e.contactSearch.value = '';
+    filterContacts();
+    updateClearButton();
+    e.contactSearch.focus();
+}
+
+function showAddContactModal() {
+    const e = window.chatElements;
+    e.addContactModal.classList.remove('hidden');
+    e.addContactInput.value = '';
+    e.addContactInput.focus();
+}
+
+function hideAddContactModal() {
+    const e = window.chatElements;
+    e.addContactModal.classList.add('hidden');
+}
+
+function handleAddContact() {
+    const e = window.chatElements;
+    const username = e.addContactInput.value.trim();
+    
+    if (!username) {
+        alert('Please enter a username');
+        return;
+    }
+    
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+        alert('Not connected to server');
+        return;
+    }
+    
+    socket.send(JSON.stringify({
+        type: 'add-contact',
+        username: username
+    }));
+    
+    hideAddContactModal();
+}
+
+function removeContact(userId) {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    
+    socket.send(JSON.stringify({
+        type: 'remove-contact',
+        userId: userId
+    }));
+}
+
+function refreshOnlineContacts() {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    
+    socket.send(JSON.stringify({ type: 'get-online-contacts' }));
+}
+
+function refreshContactsInRoom() {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    
+    socket.send(JSON.stringify({ type: 'get-contacts-in-room', roomId: roomId }));
+}
+
+// Direct Messaging
+function startDmConversation(userId) {
+    activeDmUserId = userId;
+    activeChatType = 'dm';
+    
+    const e = window.chatElements;
+    const contact = contacts.get(userId);
+    
+    // Switch to DM view
+    e.chatTabs.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.chatType === 'dm');
+    });
+    e.roomChatView.classList.remove('active');
+    e.dmChatView.classList.add('active');
+    
+    // Show DM chat
+    e.dmChatActive.style.display = 'flex';
+    e.dmUserName.textContent = contact ? contact.username : 'User';
+    e.dmUserStatus.className = 'status-indicator';
+    if (contact && contact.online) {
+        e.dmUserStatus.classList.add('online');
+    }
+    
+    // Clear and load DM history
+    e.dmMessagesContainer.innerHTML = '';
+    
+    // Load DM history
+    if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({
+            type: 'get-dm-history',
+            targetUserId: userId
+        }));
+    }
+    
+    e.dmMessageInput.focus();
+}
+
+function closeDmConversation() {
+    activeDmUserId = null;
+    const e = window.chatElements;
+    e.dmChatActive.style.display = 'none';
+}
+
+function sendDirectMessage() {
+    const e = window.chatElements;
+    
+    if (!activeDmUserId) {
+        alert('Please select a contact to message');
+        return;
+    }
+    
+    const messageText = e.dmMessageInput.value.trim();
+    if (!messageText) return;
+    
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+        alert('Not connected to server');
+        return;
+    }
+    
+    socket.send(JSON.stringify({
+        type: 'direct-message',
+        targetUserId: activeDmUserId,
+        text: messageText
+    }));
+    
+    e.dmMessageInput.value = '';
+    e.dmMessageInput.focus();
+}
+
+function handleDirectMessage(message) {
+    // If this DM is from the currently active conversation, display it
+    if (activeChatType === 'dm' && activeDmUserId === message.fromUserId) {
+        displayMessage(message, true);
+    }
+    
+    // Update DM conversations list if needed
+    updateDmConversationsList();
+}
+
+function handleDmHistory(message) {
+    const e = window.chatElements;
+    const history = message.messages || [];
+    
+    // Store history
+    if (activeDmUserId) {
+        dmConversations.set(activeDmUserId, history);
+        
+        // Display all messages
+        history.forEach(msg => {
+            displayMessage(msg, true);
+        });
+    }
+}
+
+function handlePresenceUpdate(message) {
+    // Update contact status if we have them
+    if (contacts.has(message.userId)) {
+        const contact = contacts.get(message.userId);
+        contact.online = message.status === 'online';
+        contact.roomId = message.roomId || null;
+    }
+    
+    // Refresh relevant lists
+    refreshOnlineContacts();
+    refreshContactsInRoom();
+}
+
+function updateDmConversationsList() {
+    // This could show a list of DM conversations
+    // For now, we'll keep it simple
+}
+
+function sendRoomMessage() {
+    const e = window.chatElements;
+    const messageText = e.messageInput.value.trim();
+    
+    if (!messageText) return;
+    
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+        alert('Not connected to server');
+        return;
+    }
+    
+    socket.send(JSON.stringify({ text: messageText }));
+    
+    e.messageInput.value = '';
+    e.messageInput.focus();
+}
+
+function showNotification(message) {
+    // Simple notification - could be enhanced with a toast library
+    console.log('Notification:', message);
+}

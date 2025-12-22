@@ -10,36 +10,198 @@
     <!-- Username prompt modal - shown before entering chat -->
     <div id="usernameModal" class="modal">
         <div class="modal-content">
-            <h2>Enter Your Username</h2>
-            <p>Choose a display name for this chat session:</p>
-            <input type="text" id="usernameInput" placeholder="Your username" maxlength="50" autofocus>
-            <button id="usernameSubmit">Join Chat</button>
+            <div class="modal-header">
+                <h2>Welcome to Chat</h2>
+                <p>Enter your username to continue</p>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="usernameInput" placeholder="Your username" maxlength="50" autofocus>
+                <button id="usernameSubmit" class="btn btn-primary">Join Chat</button>
+            </div>
         </div>
     </div>
 
     <!-- Main chat interface - hidden until username is entered -->
     <div id="chatContainer" class="chat-container hidden">
-        <!-- Header showing room ID -->
-        <div class="chat-header">
-            <h1>Chat Room: <span id="roomDisplay"></span></h1>
-            <p class="user-info">You are: <span id="currentUsername"></span></p>
-        </div>
+        <!-- Top Navigation Bar -->
+        <header class="app-header">
+            <div class="header-left">
+                <div class="room-info">
+                    <h1 id="roomDisplay" class="room-name"></h1>
+                    <span class="user-id-badge" id="userIdBadge">ID: --</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="user-profile">
+                    <div class="status-indicator online" id="userStatusIndicator"></div>
+                    <span id="currentUsername" class="username">User</span>
+                </div>
+                <div id="connectionStatus" class="connection-status">
+                    <span class="status-dot" id="statusDot"></span>
+                    <span id="statusText">Connecting...</span>
+                </div>
+            </div>
+        </header>
 
-        <!-- Messages display area -->
-        <div id="messagesContainer" class="messages-container">
-            <!-- Messages will be dynamically inserted here -->
-        </div>
+        <!-- Main Layout: Sidebar + Chat Area -->
+        <div class="app-body">
+            <!-- Left Sidebar: Contacts & Presence -->
+            <aside class="sidebar">
+                <!-- Tab Navigation -->
+                <div class="sidebar-tabs">
+                    <button class="tab-btn active" data-tab="contacts">Contacts</button>
+                    <button class="tab-btn" data-tab="online">Online</button>
+                    <button class="tab-btn" data-tab="room">In Room</button>
+                </div>
 
-        <!-- Message input area -->
-        <div class="input-container">
-            <input type="text" id="messageInput" placeholder="Type your message..." maxlength="500">
-            <button id="sendButton">Send</button>
-        </div>
+                <!-- Contacts Tab -->
+                <div class="tab-content active" id="contactsTab">
+                    <div class="sidebar-header">
+                        <h3>My Contacts</h3>
+                        <button class="icon-btn" id="addContactBtn" title="Add Contact">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="search-box">
+                        <div class="search-input-wrapper">
+                            <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="11" cy="11" r="8"></circle>
+                                <path d="M21 21l-4.35-4.35"></path>
+                            </svg>
+                            <input type="text" id="contactSearch" placeholder="Search contacts...">
+                            <button class="search-clear" id="clearSearchBtn" style="display: none;" title="Clear search">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="contacts-list" id="contactsList">
+                        <div class="empty-state">No contacts yet. Add someone to get started!</div>
+                    </div>
+                </div>
 
-        <!-- Connection status indicator -->
-        <div id="connectionStatus" class="status-indicator">
-            <span class="status-dot"></span>
-            <span id="statusText">Connecting...</span>
+                <!-- Online Contacts Tab -->
+                <div class="tab-content" id="onlineTab">
+                    <div class="sidebar-header">
+                        <h3>Online Contacts</h3>
+                        <button class="icon-btn" id="refreshOnlineBtn" title="Refresh">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="23 4 23 10 17 10"></polyline>
+                                <polyline points="1 20 1 14 7 14"></polyline>
+                                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="contacts-list" id="onlineContactsList">
+                        <div class="empty-state">No online contacts</div>
+                    </div>
+                </div>
+
+                <!-- Contacts in Room Tab -->
+                <div class="tab-content" id="roomTab">
+                    <div class="sidebar-header">
+                        <h3>Contacts in Room</h3>
+                        <button class="icon-btn" id="refreshRoomBtn" title="Refresh">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="23 4 23 10 17 10"></polyline>
+                                <polyline points="1 20 1 14 7 14"></polyline>
+                                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="contacts-list" id="roomContactsList">
+                        <div class="empty-state">No contacts in this room</div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Main Chat Area -->
+            <main class="chat-main">
+                <!-- Chat Type Tabs (Room Chat / Direct Messages) -->
+                <div class="chat-tabs">
+                    <button class="chat-tab-btn active" data-chat-type="room">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                        Room Chat
+                    </button>
+                    <button class="chat-tab-btn" data-chat-type="dm">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        Direct Messages
+                    </button>
+                </div>
+
+                <!-- Room Chat View -->
+                <div class="chat-view active" id="roomChatView">
+                    <div class="messages-container" id="messagesContainer">
+                        <!-- Messages will be dynamically inserted here -->
+                    </div>
+                    <div class="input-container">
+                        <input type="text" id="messageInput" placeholder="Type a message..." maxlength="500">
+                        <button id="sendButton" class="btn btn-primary">Send</button>
+                    </div>
+                </div>
+
+                <!-- Direct Messages View -->
+                <div class="chat-view" id="dmChatView">
+                    <div class="dm-conversations">
+                        <div class="dm-conversations-list" id="dmConversationsList">
+                            <div class="empty-state">Select a contact to start a direct message</div>
+                        </div>
+                    </div>
+                    <div class="dm-chat-active" id="dmChatActive" style="display: none;">
+                        <div class="dm-header">
+                            <div class="dm-user-info">
+                                <div class="status-indicator" id="dmUserStatus"></div>
+                                <span id="dmUserName">User</span>
+                            </div>
+                            <button class="icon-btn" id="closeDmBtn">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                                </svg>
+                            </button>
+                        </div>
+                        <div class="messages-container" id="dmMessagesContainer">
+                            <!-- DM messages will be dynamically inserted here -->
+                        </div>
+                        <div class="input-container">
+                            <input type="text" id="dmMessageInput" placeholder="Type a direct message..." maxlength="500">
+                            <button id="dmSendButton" class="btn btn-primary">Send</button>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Add Contact Modal -->
+    <div id="addContactModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Add Contact</h2>
+                <button class="icon-btn close-btn" id="closeAddContactModal">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-description">Enter a username to add as a contact</p>
+                <input type="text" id="addContactInput" placeholder="Username" maxlength="50">
+                <div class="modal-actions">
+                    <button class="btn btn-secondary" id="cancelAddContact">Cancel</button>
+                    <button class="btn btn-primary" id="confirmAddContact">Add Contact</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -47,4 +209,3 @@
     <script src="/client.js"></script>
 </body>
 </html>
-
